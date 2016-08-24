@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<head>
+	<title>Elastic Heart, Elastic Voice</title>
+	<meta property="og:title" content="Sia's Elastic Heart, Elastic Voice" />	
+	<meta property="og:image" content="http://www.stevengbraun.com/dev/elastic-heart/screenshot.jpg" />	
+	<meta charset="UTF-8">
+
+	<script src="lib/d3.v4.js"></script>
+	<script src="lib/jquery-3.0.0.min.js"></script>
+	<style>
+	
+		@import 'https://fonts.googleapis.com/css?family=Crimson+Text:400,400i|Source+Sans+Pro:300,600';
+
+		html, body {
+			width: 100%;
+			height: 100vh;
+			margin: 0px;
+			padding: 0px;
+			
+		}
+			
+		#wrapper {
+			width: 100%;
+			height: 100%;
+			display: flex:
+			flex-direction: column;
+			margin: 0px;
+			padding: 0px;
+		}	
+		
+		#header {
+			width: 100%;
+			margin: 0px 0px 0px 0px;
+			padding: 25px;
+			border-bottom: 4px solid #B20000;
+			cursor: default;
+			box-sizing: border-box;
+				-webkit-box-sizing: border-box;
+				-moz-box-sizing: border-box;
+		}
+		
+		
+		#vis_container {
+			width: 100%;
+			height: 400px;
+			margin: 0px;
+			padding: 0px;
+			overflow-x: scroll;
+			box-sizing: border-box;
+				-webkit-box-sizing: border-box;
+				-moz-box-sizing: border-box;
+		}		
+		
+		#content_container {
+			position: absolute;
+			z-index: 100;
+			display: flex;
+			width: 100%;
+			flex-direction: column;
+			align-items: flex-start;
+			background: rgba(249,249,249,0.8);
+			margin: 0px;
+			padding: 0px;
+		}
+		
+
+		.text_content {
+			font-family: "Source Sans Pro", sans-serif;
+			font-size: 1.1em;
+			line-height:1.5em;
+			font-weight: 300;
+			padding: 10px 50px 10px 50px;
+			margin: 0px;
+			box-sizing: border-box;
+				-moz-box-sizing: border-box;
+				-webkit-box-sizing: border-box;
+		}
+		
+		.screenshot {
+			max-width: 100%;
+		}
+		
+		.screenshot_half {
+			max-width: 40%;
+			text-align: center;
+		}
+		
+		.section_header {
+			font-family: "Crimson Text", serif;
+			width: 100%;
+			padding: 5px 25px 5px 25px;
+			margin: 0px;
+			text-transform: lowercase;
+			font-variant: small-caps;
+			font-size: 2.0em;
+			letter-spacing: 2px;
+			box-sizing: border-box;
+				-moz-box-sizing: border-box;
+				-webkit-box-sizing: border-box;
+		}
+
+		#title {
+			font-family: "Crimson Text", serif;
+			font-size: 3.0em;	
+			line-height: 1.2em;
+			margin: 0px;
+			padding: 0px;
+			color: #3E3E3E;
+		}
+
+		
+		a:link, a:visited {
+			text-decoration: none;
+			color: #B20000;
+		}
+	
+		a:hover {
+			text-decoration: underline;
+		}
+
+	</style>
+	
+	<script>
+		
+	$(document).ready(function() {
+
+		$.when($.getJSON("lib/syllables.json"),$.getJSON("lib/data.json")).done(function(syllables_response,data_response) {
+		
+			// Define data
+			var data = data_response[0];
+			var syllables = syllables_response[0];
+		
+			//////////////////////////////////////////////////////////////////////////////////
+			//// DEFINE FUNCTION PROTOTYPES
+	
+			// Move element to front and back -- see http://bl.ocks.org/eesur/4e0a69d57d3bfc8a82c2	
+			// https://github.com/wbkd/d3-extended
+			d3.selection.prototype.moveToFront = function() {  
+			  return this.each(function(){
+				this.parentNode.appendChild(this);
+			  });
+			};	
+
+			d3.selection.prototype.moveToBack = function() {  
+				return this.each(function() { 
+					firstChild = this.parentNode.firstChild; 
+					if (firstChild) { 
+						this.parentNode.insertBefore(this, firstChild); 
+					} 
+				});
+			};	
+			
+			//////////////////////////////////////////////////////////////////////////////////
+			//// CREATE VISUALIZATION
+		
+			// Specify namespace
+		
+			var main = {};
+
+			// Specify start and end time to clip beginning of speech data
+			start_time = data[0]["time"];
+			end_time = data[data.length-1]["time"];
+		
+			// Define SVG dimensions for top visualization (main)
+			main.width = $("#vis_container").innerWidth()*20;
+			main.height = $("#vis_container").innerHeight();
+			main.margin = {top: 25, left: 10, right: 10, bottom: 25};
+
+			// Define scales
+			x = d3.scaleLinear()
+				.domain([start_time,end_time])
+				.range([main.margin.left, main.width-main.margin.right]);
+
+
+			main.f = d3.scaleLinear()
+				.domain([0,2100])
+				.range([main.margin.top,main.height-main.margin.bottom]);
+
+			main.colorScale = d3.scaleLinear()
+				.domain([600,1700])
+				.range(["#FEFEFE","#CECECE"]);
+				
+			main.heightScale = d3.scaleLinear()
+				.domain([0,1300])
+				.range([1,100]);
+
+			main.opacityScale = d3.scaleLinear()
+				.domain([0,2500])
+				.range([0,1]); // larger difference = front, smaller difference = back
+
+
+			main.sizeScale = d3.scaleLinear()
+				.domain([0,2500])
+				.range([1,6]); // larger difference = front, smaller difference = back
+
+	
+			main.line = d3.line()
+				.x(function(d) { return x(d.time); })
+				.y(function(d) { return main.f(syllables[d.token_id]["f1_mean"]); });
+
+			// Initialize SVG
+
+			main.svg = d3.select("#vis_container").append("svg")
+				.attr("width", main.width)
+				.attr("height", main.height)
+					.append("g");
+
+
+			main.formants = main.svg.selectAll(".formant_group")
+				.data(data)
+				.enter()
+				.append("g")
+					.attr("class", "formant_group")
+					.attr("id", function(d) { return "formant_" + d.token_id; })
+					.attr("transform", function(d) {
+						var tx = x(d.time);
+						var ty = main.f(syllables[d.token_id]["f1_mean"]);
+						return "translate(" + tx + "," + ty + ")";
+					});
+
+			main.formants.append("line")
+				.attr("x1",0)
+				.attr("y1",0)
+				.attr("x2",0)
+				.attr("y2", function(d) { 
+					if(d.f1 > syllables[d.token_id]["f1_mean"]) {
+						var scalar = -1;
+					} else {
+						var scalar = 1;
+					}
+					return scalar * main.heightScale(Math.abs(d.f1 - syllables[d.token_id]["f1_mean"])); })
+				.attr("stroke", function(d) {
+					if(d.f1 > syllables[d.token_id]["f1_mean"]) {
+						return "#1643A8";
+					} else {
+						return "#A8162F";
+					}
+
+				})
+				.attr("stroke-width", function(d) {
+					return main.sizeScale(syllables[d.token_id]["diff_mean"]);
+				})
+				.attr("opacity", function(d) { return main.opacityScale(syllables[d.token_id]["diff_mean"]); });
+
+
+			// Draw circle points
+			main.formants.append("circle")
+				.attr("cx",0)
+				.attr("cy", function(d) { 
+					if(d.f1 > syllables[d.token_id]["f1_mean"]) {
+						var scalar = -1;
+					} else {
+						var scalar = 1;
+					}
+					return scalar * main.heightScale(Math.abs(d.f1 - syllables[d.token_id]["f1_mean"])); })
+				.attr("r", 2)
+				.attr("r", function(d) {
+					return main.sizeScale(syllables[d.token_id]["diff_mean"]);
+				})
+				
+				.attr("fill", function(d) {
+					if(d.f1 > syllables[d.token_id]["f1_mean"]) {
+						return "blue";
+					} else {
+						return "red";
+					}
+
+				})
+				.attr("opacity", function(d) { return main.opacityScale(syllables[d.token_id]["diff_mean"]); });
+
+
+			// Draw text labels
+			for(var token_id in syllables) {
+				d = syllables[token_id];
+				var ty = 0.5 * (main.f(d.f2_mean) - main.f(d.f1_mean));
+				var tx = 0.5 * (x(d.end) - x(d.start));
+				main.svg
+					.append("text")
+					.attr("transform","translate(" + (x(d.start) + tx) + "," + (main.height/2+75) + ")rotate(90)")
+					.attr("opacity",1)
+					.style("text-anchor","start")
+					.style("dominant-baseline","middle")
+					.style("font-family","Helvetica,Arial,sans-serif")
+					.style("font-size","0.8em")
+					.style("text-transform","lowercase")
+					.style("font-variant","small-caps")
+					.style("cursor","default")
+					.text(syllables[token_id]["syllable"]);
+	
+			}
+
+
+			// Draw gray rectangles for F2-f1 difference
+			for(var token_id in syllables) {
+				var syllable = syllables[token_id];
+				var syllable_height = 0.6*(main.f(syllable.f2_mean) - main.f(syllable.f1_mean));
+
+				var formant_rect = main.svg.append("g")
+					.data([{token_id: token_id, diff_mean: syllable.diff_mean}])
+					.attr("class", "formant_rect")
+					.attr("id", "formant_rect_" + token_id)
+					.attr("transform","translate(" + x(syllable.start) + "," + (main.f(syllable.f1_mean)-0.5*syllable_height) + ")")
+					.attr("opacity",1);
+				
+				formant_rect.append("rect")
+					.attr("x", 0)
+					.attr("y", 0)
+					.attr("width", x(syllable.end) - x(syllable.start))
+					.attr("height",syllable_height)
+					.attr("fill",main.colorScale(syllable.diff_mean));
+
+
+
+			}
+
+			// Draw gold line for F1 values
+			main.svg.append("path")
+			  .datum(data)
+			  .attr("stroke","#F6C900")
+			  .attr("stroke-width",4)
+			  .attr("fill","none")
+			  .attr("d", main.line);
+			d3.selectAll(".formant_rect").each(function() { d3.select(this).moveToBack(); });
+
+	}); // end $.when($.getJSON)
+
+}); // end $(document).ready()
+	
+	
+	</script>
+</head>
+
+<body>
+<div id="wrapper">
+
+<div id="header">
+	<div id="title">Elastic Heart, Elastic Voice</div>
+</div>
+	<div id="vis_container">
+	</div>
+<div id="content_container">
+	<div class="text_content">
+	When Sia released her single "Elastic Heart," first in 2013 for <i>The Hunger Games: Catching Fire</i> and then again in 2014 on her solo album <i>1000 Forms of Fear</i>, it was a smashing success, receiving critical acclaim on top music charts throughout the world. Described as <a target="_blank" href="https://en.wikipedia.org/wiki/Elastic_Heart">electropop, a power ballad, and everything between</a>, "Elastic Heart" features bouncy rhythms and powerful vocals that push the boundaries of pop creativity.
+	</div>
+	<div class="text_content">
+	These effects are not accidental; Sia accomplishes them by pushing the limits of the timbral properties of her voice. Timbre, which refers to the quality of a sound that makes it distinguishable from other sounds by way of characteristics other than its pitch and loudness, is a subjective property that can be described in many different words, including "warm," "cool," "bright," and "dark." Acoustically, however, timbre is associated with certain <a target="_blank" href="http://hyperphysics.phy-astr.gsu.edu/hbase/sound/timbre.html">physical properties of sounds</a>, including harmonic content (harmonic frequencies and spectral envelope), attack and decay, and modulations between them. Thus, while the "warmth" or "brightness" of a sound is psychologically subjective, much research has been done to demonstrate that those perceptions have psychoacoustic correlates.
+	</div>
+	<div class="text_content">
+	In this visualization, timbre is visualized in terms of one of these correlates specifically: harmonic content, or resonant frequencies in Sia's voice and shifts between them. We can measure the resonant frequencies of highest intensity, also called <i>formants</i>, for any given sound via its spectrogram (a special kind of graph that shows intensities of different sound frequencies over time for a waveform). For the set of formants of any sound, the first two of highest intensity &mdash; F1 and F2 &mdash; are the most important for vowel recognition. Lower values of F1, meaning lower frequencies, correspond to "higher" or "close" vowels, such as those in the words <i>he, hit,</i> and <i>cut</i>, while higher values of F1 correspond to middle/low or "open" vowels like those in <i>calm, coat,</i> and <i>who</i>. In this sense, highness refers to the relative position of the tongue body during voicing, resulting in a more open or closed passage through which vocal air travels. Meanwhile, F2, or more importantly the subtractive difference between F2 and F1, corresponds with vowel "backness," or lateral position of the tongue; the smaller the difference, the more "back" the vowel (and the further back the tongue is placed in voicing, such as in the word "whole"), and the larger the distance, the more "front" the vowel (<i>e.g.</i>, the vowel in "split").
+	</div>
+	<div class="text_content">
+	Through voice training, <a target="_blank" href="http://www.singwise.com/cgi-bin/main.pl?section=articles&doc=VowelsFormantsAndModifications&page=2">singers</a> learn to create interesting effects by modulating these formant signatures in the sounds they produce. In this visualization, mapping timbre by way of measured formants makes it possible to imagine the quality of Sia's voice in acoustic terms that correspond with both our perception of it and its physical properties. If you <a target="_blank" href="https://www.youtube.com/watch?v=KWZGAExj-es">listen closely</a>, you can imagine the sound of her voice moving up and down and backward and forward as she enunciates vowels and transitions between them, creating moments of timbral asymmetry that contribute to the song's momentum. Through these techniques, Sia's voice becomes elastic itself.
+	</div>
+	<div class="section_header">Reading the Visualization</div>
+	<div class="text_content">
+	The visualization has two components. First, transitions in F1 are shown by the gold line; "higher" vowels appear higher vertically in the graph and "lower" vowels appear lower. The gold line follows average F1 shown for each syllable of the song, each of which is shown by linear vertical shifts in the line. Within each syllable, deviations from this average are displayed by blue and red lines and points. If Sia bends her voice to lower vowels within the syllable, a red line and point appear below the central gold line; likewise, if Sia bends her voice to higher vowel formations within the syllable, a blue line and point appear above the gold line. In this way, it is possible to see <b>fluctuations in vowel height</b> across the entire song. In the example below, we see this in action as Sia sings the word "peace."
+	</div>
+	<div class="text_content" style="background:#fff">
+		<img class="screenshot" src="img/screen_1.jpg">
+	</div>
+	<div class="text_content">
+	Differences in timbral quality resulting from differences in F2 are also shown. For each syllable, a gray rectangle illustrates the relative subtractive difference F2&ndash;F1 in height and opacity. The height of the block represents the difference between F2 and F1 (F2&ndash;F1), which corresponds to the "backness" of the vowel for the given syllable. The smaller the difference F2&ndash;F1, and the smaller the block in the diagram, the more "back" a vowel is (<i>i.e.</i>, the further back the tongue is placed), and the larger the block in the diagram, the more it is "front" (again in terms of tongue forward position). These spatial relations are reinforced by opacity; darker blocks are more forward and lighter blocks are more back. Individual blocks are shifted up and down according to their respective syllable's average F1. Thus, it becomes possible to <b>see syllables that are more "high" and "front" and others that are more "low" and "back."</b> Below are some examples of modulations in open/close (high/low) vowels combined with modulations in front and back vowels; notice, for instance, how Sia tilts the vowel for the word "night" in the first example upwards at the beginning of the syllable and then downward at the end.
+	</div>
+	<div class="text_content" style="background:#fff;width:100%;text-align:center;vertical-align:middle">
+		<img class="screenshot_half" src="img/screen_2.jpg"><br>
+		<img class="screenshot_half" src="img/screen_3.jpg"><br>
+		<img class="screenshot_half" src="img/screen_4.jpg"><br>
+	</div>
+	<div class="section_header">About the Data</div>
+	<div class="text_content">
+	In this analysis, the phonetic software <a target="_blank" href="http://www.fon.hum.uva.nl/praat/">Praat</a> was used to determine the first two formants for each sound slice at 0.05s time intervals throughout Sia's "Elastic Heart."  Lyrics for "Elastic Heart" were retrieved from Google Play and transcribed into International Phonetic Alphabet (IPA) spelling using a <a target="_blank" href="http://lingorado.com/ipa/">free online transcription tool</a>. The original and IPA-transcribed lyrics were broken into syllables and subsequently aligned with the formants retrieved via Praat using both manual and automatic processes. After this alignment, average F1 and F2 formant frequencies were determined for each syllable, summed over all sampled formants (t = 0.05s) over the duration of the individual syllables. In the case of syllables comprised of diphthongs (<i>i.e.</i>, transitions between multiple vowels within the same syllable), averages were calculated based on averages of the composite vowel sounds.
+	</div>	
+	<div class="section_header">Acknowledgments</div>
+	<div class="text_content">
+	This visualization was created by <a target="_blank" href="http://www.stevengbraun.com">Steven Braun</a> using <a target="_blank" href="http://d3js.org">D3.js</a>. The full source for this visualization is <a target="_blank" href="http://www.github.com/braunsg/elastic-heart">available on GitHub</a>. The track <i>Elastic Heart</i> was analyzed for formant frequencies using <a target="_blank" href="http://www.fon.hum.uva.nl/praat/">Praat</a>, freeware phonetics and linguistic analysis software. <i>Elastic Heart</i> is copyrighted and owned by Sia and RCA, Republic, and Lionsgate.
+	</div>
+
+</div>
+
+</div>
+
+</body>
+</html>
